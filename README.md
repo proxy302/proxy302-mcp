@@ -14,7 +14,17 @@ Give your AI assistant a real residential-proxy toolbox. `proxy302-mcp` is a [Mo
 
 ## Hosted server (no install)
 
-Proxy302 also runs this server for you. Create an API key in the Proxy302 console first.
+Proxy302 also runs this server for you. Create an API key in the [Proxy302 console](https://proxy302.com/api-keys) first.
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=proxy302&config=eyJ1cmwiOiJodHRwczovL21jcC5wcm94eTMwMi5jb20vbWNwIn0%3D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Proxy302-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=proxy302&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.proxy302.com%2Fmcp%22%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Proxy302-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=proxy302&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.proxy302.com%2Fmcp%22%7D&quality=insiders)
+
+One click adds `https://mcp.proxy302.com/mcp`; the app then opens the Proxy302 sign-in window, where you paste your API key once (`key id:secret`). Deleting the key in the console disconnects it.
+
+- **Claude** (claude.ai, Claude Desktop): Settings → Connectors → Add custom connector, URL `https://mcp.proxy302.com/mcp`.
+- **ChatGPT** (developer mode): create a connector with the same URL and OAuth.
+- **Cursor, VS Code, Windsurf and other MCP clients:** the same URL, no headers needed.
 
 **Sign in with OAuth:** add `https://mcp.proxy302.com/mcp` as a custom connector in Claude, ChatGPT or any client that supports MCP sign-in, and paste your API key once in the sign-in window. In Claude Code:
 

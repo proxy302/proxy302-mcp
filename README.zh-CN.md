@@ -14,7 +14,17 @@
 
 ## 不用安装：直接连官方托管的服务器
 
-Proxy302 托管了同一套服务。先在 Proxy302 控制台创建 API 密钥。
+Proxy302 托管了同一套服务。先在 [Proxy302 控制台](https://proxy302.com/api-keys) 创建 API 密钥。
+
+[![Add to Cursor](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/en/install-mcp?name=proxy302&config=eyJ1cmwiOiJodHRwczovL21jcC5wcm94eTMwMi5jb20vbWNwIn0%3D)
+[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Proxy302-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=proxy302&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.proxy302.com%2Fmcp%22%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Proxy302-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=proxy302&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.proxy302.com%2Fmcp%22%7D&quality=insiders)
+
+点一下就会添加 `https://mcp.proxy302.com/mcp`，应用随后打开 Proxy302 登录窗口，贴一次 API 密钥（`key id:secret`）就连上了。在控制台删掉密钥，连接就断开。
+
+- **Claude**（claude.ai、Claude 桌面版）：设置 → 连接器 → 添加自定义连接器，地址填 `https://mcp.proxy302.com/mcp`。
+- **ChatGPT**（开发者模式）：用同一个地址新建连接器，认证选 OAuth。
+- **Cursor、VS Code、Windsurf 等其他 MCP 客户端：** 同一个地址，不用填请求头。
 
 **用 OAuth 登录：** 在 Claude、ChatGPT 等支持 MCP 登录的客户端里，把 `https://mcp.proxy302.com/mcp` 添加为自定义连接器，在弹出的登录窗口里贴一次 API 密钥即可。Claude Code：
 
