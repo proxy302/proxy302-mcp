@@ -14,7 +14,17 @@ Give your AI assistant a real residential-proxy toolbox. `proxy302-mcp` is a [Mo
 
 ## Hosted server (no install)
 
-Proxy302 also runs this server for you at `https://proxy302.com/v1/mcp` (Streamable HTTP). Create an API key in the Proxy302 console and send it as `Authorization: Bearer <key id>:<secret>`.
+Proxy302 also runs this server for you. Create an API key in the Proxy302 console first.
+
+**Sign in with OAuth:** add `https://mcp.proxy302.com/mcp` as a custom connector in Claude, ChatGPT or any client that supports MCP sign-in, and paste your API key once in the sign-in window. In Claude Code:
+
+```bash
+claude mcp add --transport http proxy302 https://mcp.proxy302.com/mcp
+```
+
+Then run `/mcp` in Claude Code to sign in.
+
+**Or send the key as a header:** use `https://proxy302.com/v1/mcp` with `Authorization: Bearer <key id>:<secret>`.
 
 ```bash
 claude mcp add --transport http proxy302 https://proxy302.com/v1/mcp --header "Authorization: Bearer <key id>:<secret>"

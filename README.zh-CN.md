@@ -14,7 +14,17 @@
 
 ## 不用安装：直接连官方托管的服务器
 
-Proxy302 在 `https://proxy302.com/v1/mcp` 托管了同一套服务（Streamable HTTP），在 Proxy302 控制台创建 API 密钥后，请求头带上 `Authorization: Bearer <key id>:<secret>` 即可。
+Proxy302 托管了同一套服务。先在 Proxy302 控制台创建 API 密钥。
+
+**用 OAuth 登录：** 在 Claude、ChatGPT 等支持 MCP 登录的客户端里，把 `https://mcp.proxy302.com/mcp` 添加为自定义连接器，在弹出的登录窗口里贴一次 API 密钥即可。Claude Code：
+
+```bash
+claude mcp add --transport http proxy302 https://mcp.proxy302.com/mcp
+```
+
+然后在 Claude Code 里运行 `/mcp` 完成登录。
+
+**或者用请求头带密钥：** 地址 `https://proxy302.com/v1/mcp`，请求头 `Authorization: Bearer <key id>:<secret>`。
 
 ```bash
 claude mcp add --transport http proxy302 https://proxy302.com/v1/mcp --header "Authorization: Bearer <key id>:<secret>"
