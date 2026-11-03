@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="proxy302-mcp: community MCP server for Proxy302">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="proxy302-mcp: the official Proxy302 MCP server">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0f172a"/>
@@ -30,7 +30,7 @@
     <line x1="1010" y1="180" x2="905" y2="290"/>
   </g>
   <rect x="64" y="58" width="168" height="34" rx="17" fill="#13324d" stroke="#34d399" stroke-width="1.5"/>
-  <text x="148" y="81" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#6ee7b7">Community project</text>
+  <text x="148" y="81" text-anchor="middle" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="16" font-weight="600" fill="#6ee7b7">Official server</text>
   <text x="64" y="160" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="62" font-weight="700" fill="#f8fafc">proxy302-mcp</text>
   <rect x="64" y="180" width="120" height="5" rx="2.5" fill="url(#accent)"/>
   <text x="64" y="232" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="27" fill="#cbd5e1">Residential proxies as tools for your AI assistant</text>

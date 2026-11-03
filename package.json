@@ -1,7 +1,7 @@
 {
   "name": "proxy302-mcp",
   "version": "0.1.0",
-  "description": "Community MCP server for Proxy302 (listed in proxy302.com developer docs): check usage, browse locations, get residential proxy credentials and fetch pages through a proxy from Claude, Cursor and other AI tools.",
+  "description": "Official Proxy302 MCP server: check usage, browse locations, get residential proxy credentials and fetch pages through a proxy from Claude, Cursor and other AI tools.",
   "type": "module",
   "license": "MIT",
   "bin": {
@@ -34,7 +34,7 @@
     "cursor",
     "ai-agent"
   ],
-  "homepage": "https://github.com/1596941391qq/proxy302-mcp#readme",
+  "homepage": "https://github.com/proxy302/proxy302-mcp#readme",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "turndown": "^7.2.4",
@@ -49,9 +49,9 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/1596941391qq/proxy302-mcp.git"
+    "url": "git+https://github.com/proxy302/proxy302-mcp.git"
   },
   "bugs": {
-    "url": "https://github.com/1596941391qq/proxy302-mcp/issues"
+    "url": "https://github.com/proxy302/proxy302-mcp/issues"
   }
 }

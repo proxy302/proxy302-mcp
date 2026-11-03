@@ -1,24 +1,47 @@
-<p align="center"><img src="https://raw.githubusercontent.com/1596941391qq/proxy302-mcp/main/docs/images/hero.svg" alt="proxy302-mcp: residential proxies as tools for your AI assistant" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/proxy302/proxy302-mcp/main/docs/images/hero.svg" alt="proxy302-mcp: residential proxies as tools for your AI assistant" width="100%"></p>
 
 # proxy302-mcp
 
-> **Community project.** proxy302-mcp is built and maintained by an independent developer in the Proxy302 community, and is listed on the [Proxy302 developer docs](https://proxy302.com/developer-docs/#community). It is not an official Proxy302 product: for account, billing or connection questions contact Proxy302 support; for bugs in this server, open a [GitHub issue](https://github.com/1596941391qq/proxy302-mcp/issues).
+> **Official Proxy302 MCP server**, built and maintained by the Proxy302 team. For account, billing or connection questions contact [Proxy302 support](https://proxy302.com); for bugs in this server, open a [GitHub issue](https://github.com/proxy302/proxy302-mcp/issues).
 
 Give your AI assistant a real residential-proxy toolbox. `proxy302-mcp` is a [Model Context Protocol](https://modelcontextprotocol.io) server for [Proxy302](https://proxy302.com): check your traffic and usage, browse countries and plans, get a rotating residential proxy URL for any country, list your proxies and static IPs, and fetch a web page through a proxy, all from Claude Code, Claude Desktop, Cursor or any MCP client.
 
 [中文说明](README.zh-CN.md)
 
-<p align="center"><img src="https://raw.githubusercontent.com/1596941391qq/proxy302-mcp/main/docs/images/how-it-works.svg" alt="How it works: your AI assistant talks to proxy302-mcp on your machine, which calls the Proxy302 API with your key and fetches pages through a residential IP" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/proxy302/proxy302-mcp/main/docs/images/how-it-works.svg" alt="How it works: your AI assistant talks to proxy302-mcp on your machine, which calls the Proxy302 API with your key and fetches pages through a residential IP" width="100%"></p>
 
 > v1 is deliberately **read-only and spend-free**: it never buys, renews or tops up anything. The one write it can do (creating a dynamic proxy credential) is free, off by default, and only bills traffic when you actually use it.
 
-## Quick start
+## Hosted server (no install)
+
+Proxy302 also runs this server for you at `https://proxy302.com/v1/mcp` (Streamable HTTP). Create an API key in the Proxy302 console and send it as `Authorization: Bearer <key id>:<secret>`.
+
+```bash
+claude mcp add --transport http proxy302 https://proxy302.com/v1/mcp --header "Authorization: Bearer <key id>:<secret>"
+```
+
+Cursor (`~/.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "proxy302": {
+      "url": "https://proxy302.com/v1/mcp",
+      "headers": { "Authorization": "Bearer <key id>:<secret>" }
+    }
+  }
+}
+```
+
+The hosted server has the same tools except `fetch_url`, plus `rotate_ip` (fresh exit IP for sticky proxies), `check_ip_purity` (blocklist score of your static IPs, or of the IPs a location would hand out next) and `estimate_cost` (quote a plan against your wallet). It never spends money either.
+
+## Run it locally
 
 1. Create an API key in the Proxy302 console and note its key id and secret.
 2. Install:
 
 ```bash
-claude mcp add proxy302 -e PROXY302_API_KEY="<key id>:<secret>" -- npx -y github:1596941391qq/proxy302-mcp
+claude mcp add proxy302 -e PROXY302_API_KEY="<key id>:<secret>" -- npx -y github:proxy302/proxy302-mcp
 ```
 
 Requires Node.js 20+.
@@ -34,7 +57,7 @@ Bonus: Proxy302 credits **1 PTC** to paid accounts the first time a call through
   "mcpServers": {
     "proxy302": {
       "command": "npx",
-      "args": ["-y", "github:1596941391qq/proxy302-mcp"],
+      "args": ["-y", "github:proxy302/proxy302-mcp"],
       "env": { "PROXY302_API_KEY": "<key id>:<secret>" }
     }
   }
@@ -50,7 +73,7 @@ Bonus: Proxy302 credits **1 PTC** to paid accounts the first time a call through
   "mcpServers": {
     "proxy302": {
       "command": "npx",
-      "args": ["-y", "github:1596941391qq/proxy302-mcp"],
+      "args": ["-y", "github:proxy302/proxy302-mcp"],
       "env": { "PROXY302_API_KEY": "<key id>:<secret>" }
     }
   }
@@ -73,7 +96,7 @@ Not in v1, on purpose: purchases, renewals, top-ups.
 
 ## Examples
 
-<p align="center"><img src="https://raw.githubusercontent.com/1596941391qq/proxy302-mcp/main/docs/images/demo.svg" alt="Example session: checking remaining traffic, getting a Germany proxy and fetching a page through it" width="100%"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/proxy302/proxy302-mcp/main/docs/images/demo.svg" alt="Example session: checking remaining traffic, getting a Germany proxy and fetching a page through it" width="100%"></p>
 
 Ask your assistant:
 
