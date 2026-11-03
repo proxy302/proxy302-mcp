@@ -7,6 +7,7 @@ import { Proxy302Client, buildAuthorization } from '../src/client.js';
 import { formatBytes, htmlToMarkdown, htmlToText, mask, proxyUrl } from '../src/format.js';
 import { fetchThroughProxy } from '../src/fetchPage.js';
 import { createServer } from '../src/server.js';
+import { resolveArea } from '../src/tools.js';
 
 const envelope = (data: unknown, code = 0, msg = 'success') => new Response(JSON.stringify({ code, msg, data }), { status: 200 });
 
@@ -21,6 +22,17 @@ describe('auth', () => {
   it('rejects missing or malformed keys with a helpful message', () => {
     expect(() => buildAuthorization(undefined)).toThrow(/PROXY302_API_KEY/);
     expect(() => buildAuthorization('short')).toThrow(/<key id>:<secret>/);
+  });
+});
+
+describe('area lookup', () => {
+  it('finds a country by ISO code although the API filters on names', async () => {
+    const countries = [{ id: 14, name: 'Australia', code: 'AU' }, { id: 182, name: 'Russia', code: 'RU' }, { id: 233, name: 'United States', code: 'US' }];
+    const c = new Proxy302Client({ apiKey: 'a:b', fetchImpl: (async (u: URL) => envelope({ data: countries.filter(r => !u.searchParams.get('name') || r.name.toLowerCase().includes(u.searchParams.get('name')!.toLowerCase())) })) as never });
+    await expect(resolveArea(c, 'country', 'US')).resolves.toMatchObject({ id: 233, name: 'United States' });
+    await expect(resolveArea(c, 'country', 'united states')).resolves.toMatchObject({ id: 233 });
+    await expect(resolveArea(c, 'country', 'zz')).rejects.toThrow(/No country matches/);
+    await expect(resolveArea(c, 'country', 'u')).rejects.toThrow(/matches several/);
   });
 });
 

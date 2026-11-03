@@ -14,8 +14,10 @@ export async function resolveArea(client: Proxy302Client, type: 'country' | 'sta
   if (/^\d+$/.test(input.trim())) return { id: Number(input), name: input };
   const rows = (await client.areas(type, pid, input.trim())).data;
   const q = input.trim().toLowerCase();
-  const exact = rows.filter(r => r.name.toLowerCase() === q || r.code?.toLowerCase() === q);
-  const pick = exact.length === 1 ? exact : rows.length === 1 ? rows : [];
+  let exact = rows.filter(r => r.name.toLowerCase() === q || r.code?.toLowerCase() === q);
+  // The API filters on the name, so a code like "US" finds Australia and Russia but not United States: look codes up in the full list.
+  if (!exact.length && /^[a-z]{2,3}$/i.test(input.trim())) exact = (await client.areas(type, pid)).data.filter(r => r.code?.toLowerCase() === q);
+  const pick = exact.length === 1 ? exact : !exact.length && rows.length === 1 ? rows : [];
   if (pick.length === 1) return pick[0]!;
   if (!rows.length) throw new Proxy302Error(`No ${type} matches "${input}". Use list_countries / list_regions to see valid names.`);
   throw new Proxy302Error(`"${input}" matches several ${type}s: ${rows.slice(0, 10).map(r => `${r.name} (id ${r.id})`).join(', ')}. Pass the exact name or id.`);
