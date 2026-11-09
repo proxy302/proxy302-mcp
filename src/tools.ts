@@ -45,6 +45,12 @@ function matchesCountry(row: TokenRow, countryName: string): boolean {
   return (row.proxy_area ?? '').split(' - ')[0]!.trim().toLowerCase() === countryName.toLowerCase();
 }
 const usable = (row: TokenRow) => row.status === 1 || row.status === 5;
+/** The API's texts for "no traffic package on this line" (proxy302-backend generation-failure.ts, no_traffic_package). */
+const NO_TRAFFIC_PACKAGE = new Set([
+  'A matching prepaid traffic package is required for the bridge',
+  'No matching traffic package for this line; purchase a same-config traffic package or enable auto-refill',
+  'No unexpired traffic pool matches the selected provider configuration',
+]);
 
 export function registerTools(server: McpServer, client: Proxy302Client): void {
   server.registerTool('get_account_usage', {
@@ -136,9 +142,17 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
     const ci = city ? await resolveArea(client, 'city', city, String(s?.id ?? '')) : undefined;
     if (ci && !s) throw new Proxy302Error('Give the state as well when targeting a city.');
     const key = `mcp-${c.id}-${s?.id ?? 0}-${ci?.id ?? 0}-${protocol}-${line}`;
-    const out = await client.generateDynamic({ s: line === 'premium' ? 1 : 3, protocol, country_id: c.id, state_id: s?.id ?? 0, city_id: ci?.id ?? 0, idempotency_key: key });
+    const body = { s: line === 'premium' ? 1 : 3, protocol, country_id: c.id, state_id: s?.id ?? 0, city_id: ci?.id ?? 0 };
+    // Like the Proxy302 console: with no traffic package for this line the wallet pays per GB (the API refuses a wallet
+    // that cannot cover the pay-as-you-go hold). A wallet-only account could never create a proxy here before.
+    let billedFrom: 'traffic_package' | 'wallet' = 'traffic_package';
+    const out = await client.generateDynamic({ ...body, idempotency_key: key }).catch((e: unknown) => {
+      if (!(e instanceof Proxy302Error && NO_TRAFFIC_PACKAGE.has(e.message))) throw e;
+      billedFrom = 'wallet';
+      return client.generateDynamic({ ...body, billing_mode: 'payg_wallet', idempotency_key: `${key}-payg` });
+    });
     return ok({
-      reused: false, token_id: out.token_id, area: [c.name, s?.name, ci?.name].filter(Boolean).join(' - '), protocol: out.protocol,
+      reused: false, token_id: out.token_id, billed_from: billedFrom, area: [c.name, s?.name, ci?.name].filter(Boolean).join(' - '), protocol: out.protocol,
       host: out.host, port: out.port, username: out.username, password: out.password,
       connection_url: proxyUrl(out.protocol, out.username, out.password, out.host, out.port),
     });
@@ -149,15 +163,17 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
     description: 'List proxies on the account: dynamic or static, billed by traffic or by IP. Passwords are masked unless include_credentials=true. Read-only.',
     inputSchema: {
       kind: z.enum(['dynamic', 'static']).default('static'),
-      billing: z.enum(['ip', 'traffic']).default('ip'),
+      billing: z.enum(['ip', 'traffic']).optional().describe('Defaults to traffic for dynamic proxies and ip for static ones'),
       page_size: z.number().int().min(1).max(100).default(20),
       page: z.number().int().min(1).default(1),
       active_only: z.boolean().default(true),
       include_credentials: z.boolean().default(false),
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, safe(async ({ kind, billing, page_size, page, active_only, include_credentials }) => {
-    const r = await client.tokens(kind, billing, { page, page_size, ...(active_only ? { status: 1 } : {}) });
+  }, safe(async ({ kind, billing: chosen, page_size, page, active_only, include_credentials }) => {
+    const billing = chosen ?? (kind === 'dynamic' ? 'traffic' : 'ip');
+    // The API's active state is 5 for traffic-billed proxies and 1 for IP-billed ones.
+    const r = await client.tokens(kind, billing, { page, page_size, ...(active_only ? { status: billing === 'traffic' ? 5 : 1 } : {}) });
     return ok({ total: r.total, page: r.page, has_more: r.has_more, proxies: r.data.map(row => describeToken(row, include_credentials)) });
   }));
 

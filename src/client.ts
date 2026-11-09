@@ -92,7 +92,7 @@ export class Proxy302Client {
     return this.request<{ data: TokenRow[]; total: number; page: number; page_size: number; has_more: boolean }>('GET', `proxy/tokens/${generate}/${proxyType}`, query);
   }
   /** Creates a dynamic proxy credential (no charge at creation; traffic is billed on use). */
-  generateDynamic(body: { s: number; protocol: 'http' | 'socks5'; country_id: number; state_id?: number; city_id?: number; idempotency_key: string }) {
+  generateDynamic(body: { s: number; protocol: 'http' | 'socks5'; country_id: number; state_id?: number; city_id?: number; billing_mode?: 'payg_wallet'; idempotency_key: string }) {
     return this.request<{ token_id: number; username: string; password: string; host: string; port: number; protocol: string }>('POST', 'proxy/api/proxy/dynamic/traffic', undefined, body);
   }
 }

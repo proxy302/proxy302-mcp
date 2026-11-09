@@ -122,6 +122,30 @@ describe('MCP tools', () => {
     expect(text(miss)).toMatch(/create_if_missing/);
     expect(calls.some(c => c.includes('/api/proxy/dynamic/traffic'))).toBe(false);
   });
+  it('get_dynamic_proxy creates on the wallet when the line has no traffic package', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = await connect((async (u: URL, init: RequestInit) => {
+      if (u.pathname.endsWith('/area/country')) return envelope({ data: [{ id: 233, name: 'United States', code: 'US' }] });
+      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: [], total: 0 });
+      if (u.pathname.endsWith('/api/proxy/dynamic/traffic')) {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        bodies.push(body);
+        return body.billing_mode === 'payg_wallet'
+          ? envelope({ token_id: 9, username: 'uu', password: 'pp', host: 'proxy.example', port: 2222, protocol: 'http' })
+          : envelope(null, 50301, 'A matching prepaid traffic package is required for the bridge');
+      }
+      return envelope(null, 404, 'nope');
+    }) as never);
+    const r = JSON.parse(text(await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', create_if_missing: true } })));
+    expect(r).toMatchObject({ reused: false, token_id: 9, billed_from: 'wallet' });
+    expect(bodies.map(b => [b.billing_mode, b.idempotency_key])).toEqual([[undefined, 'mcp-233-0-0-http-budget'], ['payg_wallet', 'mcp-233-0-0-http-budget-payg']]);
+  });
+  it('list_my_proxies asks for the active state of the billing it lists', async () => {
+    const seen: string[] = [];
+    const client = await connect((async (u: URL) => { seen.push(`${u.pathname.split('/tokens/')[1]} ${u.searchParams.get('status')}`); return envelope({ data: [], total: 0, page: 1, has_more: false }); }) as never);
+    for (const args of [{ kind: 'dynamic' }, {}, { kind: 'static', billing: 'traffic' }, { kind: 'dynamic', active_only: false }]) await client.callTool({ name: 'list_my_proxies', arguments: args });
+    expect(seen).toEqual(['dynamic/traffic 5', 'static/ip 1', 'static/traffic 5', 'dynamic/traffic null']);
+  });
   it('list_my_proxies masks passwords by default', async () => {
     const client = await connect((async () => envelope({ data: [{ token_id: 1, username: 'u', passwd: 'secretpass', host: 'h', port: 1, status: 1 }], total: 1, page: 1, has_more: false })) as never);
     const r = text(await client.callTool({ name: 'list_my_proxies', arguments: {} }));
