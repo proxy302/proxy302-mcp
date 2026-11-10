@@ -53,7 +53,7 @@ Cursor (`~/.cursor/mcp.json`):
 }
 ```
 
-The hosted server has the same tools except `fetch_url`, plus `rotate_ip` (fresh exit IP for sticky proxies), `check_ip_purity` (blocklist score of your static IPs, or of the IPs a location would hand out next) and `estimate_cost` (quote a plan against your wallet). It never spends money either.
+The hosted server has the same tools except `fetch_url`, plus `check_ip_purity` (blocklist score of your static IPs, or of the IPs a location would hand out next) and `estimate_cost` (quote a plan against your wallet). It never spends money either.
 
 ## Run it locally
 
@@ -108,7 +108,9 @@ Bonus: Proxy302 credits **1 PTC** to paid accounts the first time a call through
 | `list_countries` | Countries you can target, with ids and ISO codes (name filter) |
 | `list_regions` | States of a country, or cities of a state |
 | `list_products` | Product lines and static IP plans (data center and residential) |
-| `get_dynamic_proxy` | A ready `http://user:pass@host:port` rotating residential URL for a country (state/city where supported). Reuses an existing proxy; `create_if_missing=true` creates one |
+| `get_dynamic_proxy` | A ready `http://user:pass@host:port` residential URL for a country (premium line: also state, city and ISP). `session_mode=rotate` gives a new IP on every connection, `sticky` (default) keeps one IP; `session_minutes` 10–120 on the budget line. Reuses an existing proxy of the same line and place; `create_if_missing=true` creates one, billed from a traffic package or else the wallet |
+| `list_isps` | ISPs the premium line can target in a country |
+| `rotate_ip` | New exit IP for sticky proxies: returns a fresh-session URL that switches at once |
 | `list_my_proxies` | Your dynamic proxies and static IPs, passwords masked unless asked |
 | `fetch_url` | Request a URL through your proxy (optionally from a given country) and return Markdown, text or raw |
 

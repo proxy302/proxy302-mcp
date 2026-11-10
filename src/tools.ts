@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Proxy302Client, Proxy302Error, type TokenRow } from './client.js';
@@ -43,6 +44,36 @@ function describeToken(row: TokenRow, includeCredentials: boolean) {
 
 function matchesCountry(row: TokenRow, countryName: string): boolean {
   return (row.proxy_area ?? '').split(' - ')[0]!.trim().toLowerCase() === countryName.toLowerCase();
+}
+/** Exactly this place: a city proxy does not answer a country request. */
+const sameArea = (row: TokenRow, label: string) => (row.proxy_area ?? '').split(' - ').map(part => part.trim().toLowerCase()).filter(part => part && part !== '-').join(' - ') === label.toLowerCase();
+/** s 1/2 = premium line, 3/4 = budget line. */
+function lineOf(row: TokenRow): 'premium' | 'budget' | null {
+  const s = Number((row as { s?: unknown }).s);
+  return s === 1 || s === 2 ? 'premium' : s === 3 || s === 4 ? 'budget' : null;
+}
+const newSessionId = () => randomBytes(6).toString('hex');
+
+async function countryCode(client: Proxy302Client, c: Area): Promise<string | null> {
+  const code = c.code ?? (await client.areas('country')).data.find(row => row.id === c.id)?.code;
+  return code && /^[A-Za-z]{2}$/.test(code) ? code.toLowerCase() : null;
+}
+
+type Connection = { username?: string | undefined; password?: string | undefined; host?: string | undefined; port?: number | string | null | undefined; connection_url?: string | undefined };
+/** Username parameters (proxy302.com docs): -country-<cc> without a session = a new IP on every new connection;
+ *  -session-<id> keeps one IP, -sessTime-<minutes> sets how long on the budget line. Sticky without minutes keeps the
+ *  proxy's own session (plain username). */
+function withSession<T extends Connection>(proxy: T, protocol: string, code: string | null, mode: 'sticky' | 'rotate', minutes: number | undefined) {
+  let tail = '';
+  if (mode === 'rotate') {
+    if (!code) throw new Proxy302Error('Rotating needs the country code of this proxy; pass the country as a two-letter code.');
+    tail = `-country-${code}`;
+  } else if (minutes) tail = `-session-${newSessionId()}-sessTime-${minutes}`;
+  const how_to_rotate = mode === 'rotate' ? 'Every new connection already gets a new IP.'
+    : 'For a new IP now, change the value after -session- in the username (any letters and digits), or call rotate_ip.';
+  if (!tail || !proxy.username || !proxy.password || !proxy.host || !proxy.port) return { ...proxy, session_mode: mode, how_to_rotate };
+  const username = proxy.username + tail;
+  return { ...proxy, username, connection_url: proxyUrl(protocol, username, proxy.password, proxy.host, Number(proxy.port)), session_mode: mode, how_to_rotate };
 }
 const usable = (row: TokenRow) => row.status === 1 || row.status === 5;
 /** The API's texts for "no traffic package on this line" (proxy302-backend generation-failure.ts, no_traffic_package). */
@@ -109,7 +140,7 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
   }, safe(async () => {
     const [dc, res] = await Promise.all([client.payways('static_data_center'), client.payways('static_residential')]);
     return ok({
-      dynamic_residential: { billing: 'per GB of traffic', lines: { premium: 'higher-quality line (selector 1/2)', budget: 'lower-cost line (selector 3/4)' }, targeting: 'country (state/city on supported lines)', tool: 'get_dynamic_proxy' },
+      dynamic_residential: { billing: 'per GB of traffic', lines: { premium: 'higher-quality line: country, state, city and ISP', budget: 'lower-cost line: country' }, rotation: 'new IP on every new connection, or sticky sessions', concurrency: 'no limit on concurrent connections', tools: ['get_dynamic_proxy', 'rotate_ip', 'list_isps'] },
       static_data_center_plans: dc.data.map(p => ({ id: p.id, name: p.en_name || p.name })),
       static_residential_plans: res.data.map(p => ({ id: p.id, name: p.en_name || p.name })),
       note: 'This MCP server does not buy, renew or top up. Do that in the Proxy302 console.',
@@ -118,31 +149,49 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
 
   server.registerTool('get_dynamic_proxy', {
     title: 'Get a dynamic residential proxy connection string',
-    description: 'Return a ready-to-use rotating residential proxy URL for a country (optionally state/city). Reuses an existing matching proxy of yours; with create_if_missing=true it creates a new credential if none exists (creating is free, traffic is billed only when used from your prepaid pool).',
+    description: 'Return a ready-to-use residential proxy URL for a country (optionally state and city, and on the premium line an ISP). '
+      + 'session_mode="rotate": every new connection exits through a new IP. session_mode="sticky" (default): one IP across connections '
+      + '(premium: usually 5-10 minutes, not adjustable; budget: 10 minutes, or session_minutes up to 120). '
+      + 'Reuses a matching proxy of the same line you already have; with create_if_missing=true it creates one if none exists. '
+      + 'Creating is free; traffic is billed per GB when used, from a traffic package for that line if you have one, otherwise from the wallet. '
+      + 'No limit on concurrent connections.',
     inputSchema: {
       country: z.string().describe('Country name, ISO code or id, e.g. "United States" or "US"'),
       state: z.string().optional(), city: z.string().optional(),
+      isp: z.string().max(32).optional().describe('Premium line only: ISP key from list_isps, e.g. "comcast"'),
       protocol: z.enum(['http', 'socks5']).default('http'),
-      line: z.enum(['budget', 'premium']).default('budget'),
+      line: z.enum(['budget', 'premium']).default('budget').describe('budget = lower price per GB, country only; premium = higher-quality line with state, city and ISP'),
+      session_mode: z.enum(['sticky', 'rotate']).default('sticky').describe('rotate = new IP on every new connection; sticky = keep one IP'),
+      session_minutes: z.union([z.literal(10), z.literal(30), z.literal(60), z.literal(120)]).optional().describe('Budget line, sticky only: minutes to keep one IP'),
       create_if_missing: z.boolean().default(false),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, safe(async ({ country, state, city, protocol, line, create_if_missing }) => {
+  }, safe(async ({ country, state, city, isp, protocol, line, session_mode, session_minutes, create_if_missing }) => {
+    if (isp && line !== 'premium') throw new Proxy302Error('ISP targeting is on the premium line only: pass line="premium".');
+    if (session_minutes && session_mode === 'rotate') throw new Proxy302Error('session_minutes applies to sticky sessions only.');
+    if (session_minutes && line === 'premium') throw new Proxy302Error('A premium sticky IP usually holds 5-10 minutes and the length is not adjustable; session_minutes is for the budget line.');
     const c = await resolveArea(client, 'country', country);
-    const wantAny = !state && !city;
-    if (wantAny) {
-      const rows = (await client.tokens('dynamic', 'traffic', { page_size: 200 })).data;
-      const hit = rows.find(r => usable(r) && matchesCountry(r, c.name) && (r.network ?? 'http') === protocol && toEndpoint(r));
-      if (hit) return ok({ reused: true, ...describeToken(hit, true) });
-    }
-    if (!create_if_missing) {
-      throw new Proxy302Error(`No existing ${protocol} dynamic proxy for ${c.name}. Call again with create_if_missing=true to create one (free to create; billed per GB on use).`);
+    let ispOption: { key: string; label: string } | undefined;
+    if (isp) {
+      const options = (await client.ispCatalog(c.id)).data;
+      ispOption = options.find(option => option.key === isp.trim().toLowerCase());
+      if (!ispOption) throw new Proxy302Error(options.length ? `"${isp}" is not an ISP we can target in ${c.name}. Choose one of: ${options.map(o => o.key).join(', ')}.` : `ISP targeting is not available in ${c.name}.`);
     }
     const s = state ? await resolveArea(client, 'state', state, String(c.id)) : undefined;
     const ci = city ? await resolveArea(client, 'city', city, String(s?.id ?? '')) : undefined;
     if (ci && !s) throw new Proxy302Error('Give the state as well when targeting a city.');
-    const key = `mcp-${c.id}-${s?.id ?? 0}-${ci?.id ?? 0}-${protocol}-${line}`;
-    const body = { s: line === 'premium' ? 1 : 3, protocol, country_id: c.id, state_id: s?.id ?? 0, city_id: ci?.id ?? 0 };
+    const label = [c.name, s?.name, ci?.name].filter(Boolean).join(' - ');
+    // Only a proxy of the requested line and exactly this place; an ISP proxy is found again by its idempotency key.
+    if (!ispOption) {
+      const rows = (await client.tokens('dynamic', 'traffic', { page_size: 200 })).data;
+      const hit = rows.find(r => usable(r) && lineOf(r) === line && sameArea(r, label) && (r.network ?? 'http') === protocol && toEndpoint(r));
+      if (hit) return ok({ reused: true, ...withSession(describeToken(hit, true), hit.network ?? 'http', await countryCode(client, c), session_mode, session_minutes) });
+    }
+    if (!create_if_missing) {
+      throw new Proxy302Error(`No existing ${protocol} ${line} dynamic proxy for ${label}${ispOption ? ` on ${ispOption.label}` : ''}. Call again with create_if_missing=true to create one (free to create; billed per GB on use).`);
+    }
+    const key = `mcp-${c.id}-${s?.id ?? 0}-${ci?.id ?? 0}-${protocol}-${line}${ispOption ? `-${ispOption.key}` : ''}`;
+    const body = { s: line === 'premium' ? 1 : 3, protocol, country_id: c.id, state_id: s?.id ?? 0, city_id: ci?.id ?? 0, ...(ispOption ? { isp: ispOption.key } : {}) };
     // Like the Proxy302 console: with no traffic package for this line the wallet pays per GB (the API refuses a wallet
     // that cannot cover the pay-as-you-go hold). A wallet-only account could never create a proxy here before.
     let billedFrom: 'traffic_package' | 'wallet' = 'traffic_package';
@@ -151,11 +200,42 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
       billedFrom = 'wallet';
       return client.generateDynamic({ ...body, billing_mode: 'payg_wallet', idempotency_key: `${key}-payg` });
     });
-    return ok({
-      reused: false, token_id: out.token_id, billed_from: billedFrom, area: [c.name, s?.name, ci?.name].filter(Boolean).join(' - '), protocol: out.protocol,
+    return ok(withSession({
+      reused: false, token_id: out.token_id, billed_from: billedFrom, line, area: [label, ispOption?.label].filter(Boolean).join(' - '), protocol: out.protocol,
       host: out.host, port: out.port, username: out.username, password: out.password,
       connection_url: proxyUrl(out.protocol, out.username, out.password, out.host, out.port),
-    });
+    }, out.protocol, await countryCode(client, c), session_mode, session_minutes));
+  }));
+
+  server.registerTool('list_isps', {
+    title: 'List ISPs for premium targeting',
+    description: 'ISPs (carriers) the premium line can target in a country, for get_dynamic_proxy isp=. Read-only.',
+    inputSchema: { country: z.string().describe('Country name, ISO code or id') },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, safe(async ({ country }) => {
+    const c = await resolveArea(client, 'country', country);
+    const isps = (await client.ispCatalog(c.id)).data.map(option => ({ isp: option.key, name: option.label }));
+    return ok({ country: c.name, isps, ...(isps.length ? {} : { note: `ISP targeting is not available in ${c.name}; choose by country, state or city instead.` }) });
+  }));
+
+  server.registerTool('rotate_ip', {
+    title: 'Rotate sticky proxies to a new IP',
+    description: 'Get a new IP for sticky dynamic proxies. Each proxy comes back with a connection_url carrying a fresh session: use it and the next '
+      + 'connection exits through a new IP right away. The plain username, password and billing stay the same; its own sticky IP also changes '
+      + 'within about 2.5 minutes. Free. Token ids come from list_my_proxies or get_dynamic_proxy.',
+    inputSchema: { token_ids: z.array(z.number().int().positive()).min(1).max(100).describe('Token ids of your sticky dynamic proxies') },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, safe(async ({ token_ids }) => {
+    const ids = [...new Set(token_ids)];
+    const rows = (await client.tokens('dynamic', 'traffic', { page_size: 200 })).data;
+    const new_ip_now = ids.map(id => rows.find(row => Number(row.token_id ?? row.id) === id)).filter((row): row is TokenRow => !!row && !!toEndpoint(row))
+      .map(row => {
+        const e = toEndpoint(row)!;
+        const username = `${e.username}-session-${newSessionId()}`;
+        return { token_id: Number(row.token_id ?? row.id), username, connection_url: proxyUrl(row.network ?? 'http', username, e.password, e.host, e.port) };
+      });
+    const out = await client.resetSessions(ids);
+    return ok({ new_ip_now, rotated: out.results, apply_within_seconds: out.apply_within_seconds });
   }));
 
   server.registerTool('list_my_proxies', {

@@ -53,7 +53,7 @@ Cursor（`~/.cursor/mcp.json`）：
 }
 ```
 
-托管版的工具和本地版一样，不含 `fetch_url`，另外多了 `rotate_ip`（粘性代理换一个出口 IP）、`check_ip_purity`（查你的静态 IP 或某个地区下一批 IP 的黑名单评分）、`estimate_cost`（按你的账户报价、看钱包够不够）。同样不会花钱。
+托管版的工具和本地版一样，不含 `fetch_url`，另外多了 `check_ip_purity`（查你的静态 IP 或某个地区下一批 IP 的黑名单评分）、`estimate_cost`（按你的账户报价、看钱包够不够）。同样不会花钱。
 
 ## 在本机运行：一条命令安装
 
@@ -91,7 +91,9 @@ claude mcp add proxy302 -e PROXY302_API_KEY="<key id>:<secret>" -- npx -y github
 | `list_countries` | 可定向的国家（含 id 和 ISO 代码） |
 | `list_regions` | 某国的州，或某州的城市 |
 | `list_products` | 产品线与静态 IP 套餐 |
-| `get_dynamic_proxy` | 按国家（支持的线路可到州/市）返回可直接使用的动态住宅代理 URL；优先复用已有代理，`create_if_missing=true` 时才创建 |
+| `get_dynamic_proxy` | 按国家返回可直接使用的动态住宅代理 URL（优质线路还能到州、城市、运营商）。`session_mode=rotate` 每个新连接换 IP，`sticky`（默认）保持一个 IP；低价线路可用 `session_minutes` 设 10–120 分钟。优先复用同线路同地区的已有代理，`create_if_missing=true` 时才创建，有流量包扣流量包、没有就按量扣钱包 |
+| `list_isps` | 某国优质线路可指定的运营商 |
+| `rotate_ip` | 粘性代理换出口 IP：返回一个新会话的地址，立即生效 |
 | `list_my_proxies` | 你的动态代理和静态 IP，密码默认打码 |
 | `fetch_url` | 通过你的代理（可指定出口国家）请求网址，返回 Markdown、纯文本或原文 |
 

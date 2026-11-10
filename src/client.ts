@@ -51,7 +51,7 @@ export class Proxy302Client {
     return new Proxy302Client({ apiKey: env.PROXY302_API_KEY, apiSecret: env.PROXY302_API_SECRET, baseUrl: env.PROXY302_BASE_URL });
   }
 
-  async request<T = unknown>(method: 'GET' | 'POST', path: string, query?: Record<string, string | number | undefined>, body?: unknown): Promise<T> {
+  async request<T = unknown>(method: 'GET' | 'POST', path: string, query?: Record<string, string | number | undefined>, body?: unknown, extraHeaders: Record<string, string> = {}): Promise<T> {
     const authorization = buildAuthorization(this.options.apiKey, this.options.apiSecret);
     const url = new URL(`${this.baseUrl}/open_api/v3/${path.replace(/^\/+/, '')}`);
     for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined && v !== '') url.searchParams.set(k, String(v));
@@ -59,7 +59,7 @@ export class Proxy302Client {
     try {
       res = await this.fetchImpl(url, {
         method,
-        headers: { authorization, accept: 'application/json', ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'user-agent': CLIENT_ID, 'x-proxy302-client': CLIENT_ID },
+        headers: { authorization, accept: 'application/json', ...(body !== undefined ? { 'content-type': 'application/json' } : {}), 'user-agent': CLIENT_ID, 'x-proxy302-client': CLIENT_ID, ...extraHeaders },
         body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(this.timeoutMs),
       });
@@ -92,7 +92,16 @@ export class Proxy302Client {
     return this.request<{ data: TokenRow[]; total: number; page: number; page_size: number; has_more: boolean }>('GET', `proxy/tokens/${generate}/${proxyType}`, query);
   }
   /** Creates a dynamic proxy credential (no charge at creation; traffic is billed on use). */
-  generateDynamic(body: { s: number; protocol: 'http' | 'socks5'; country_id: number; state_id?: number; city_id?: number; billing_mode?: 'payg_wallet'; idempotency_key: string }) {
+  generateDynamic(body: { s: number; protocol: 'http' | 'socks5'; country_id: number; state_id?: number; city_id?: number; isp?: string; billing_mode?: 'payg_wallet'; idempotency_key: string }) {
     return this.request<{ token_id: number; username: string; password: string; host: string; port: number; protocol: string }>('POST', 'proxy/api/proxy/dynamic/traffic', undefined, body);
+  }
+  /** Sticky-session reset: the next gateway snapshot gives each token a new sticky IP (within apply_within_seconds). */
+  resetSessions(tokenIds: readonly number[]) {
+    return this.request<{ results: Array<{ token_id: string; rotated_sessions: number }>; apply_within_seconds: number }>(
+      'POST', 'proxy/sessions', undefined, { token_ids: tokenIds }, { 'x-http-method-override': 'DELETE' });
+  }
+  /** ISPs the premium line can target in a country (keys for generateDynamic isp). */
+  ispCatalog(countryId: number) {
+    return this.request<{ data: Array<{ country_id: number; key: string; label: string }> }>('GET', 'proxy/isp/catalog', { country_id: countryId });
   }
 }

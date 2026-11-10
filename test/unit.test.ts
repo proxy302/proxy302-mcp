@@ -42,8 +42,8 @@ describe('client', () => {
     const c = new Proxy302Client({ apiKey: 'a:b', fetchImpl: (async (u: URL, init: RequestInit) => { seen = { url: String(u), auth: (init.headers as Record<string, string>).authorization, headers: init.headers as Record<string, string> }; return envelope({ data: [] }); }) as never });
     await c.areas('country', undefined, 'ger');
     expect(seen!.url).toBe('https://proxy302.com/open_api/v3/proxy/area/country?name=ger');
-    expect(seen!.headers['x-proxy302-client']).toBe('proxy302-mcp/0.1.0');
-    expect(seen!.headers['user-agent']).toBe('proxy302-mcp/0.1.0');
+    expect(seen!.headers['x-proxy302-client']).toBe('proxy302-mcp/0.2.0');
+    expect(seen!.headers['user-agent']).toBe('proxy302-mcp/0.2.0');
     expect(seen!.auth).toBe(`Basic ${Buffer.from('a:b').toString('base64')}`);
   });
   it('turns non-zero envelope codes into errors even on HTTP 200', async () => {
@@ -104,7 +104,7 @@ describe('MCP tools', () => {
   it('lists the v1 tools and none can spend money', async () => {
     const client = await connect((async () => envelope({})) as never);
     const names = (await client.listTools()).tools.map(t => t.name).sort();
-    expect(names).toEqual(['fetch_url', 'get_account_usage', 'get_dynamic_proxy', 'list_countries', 'list_my_proxies', 'list_products', 'list_regions']);
+    expect(names).toEqual(['fetch_url', 'get_account_usage', 'get_dynamic_proxy', 'list_countries', 'list_isps', 'list_my_proxies', 'list_products', 'list_regions', 'rotate_ip']);
     expect(names.join()).not.toMatch(/buy|renew|topup|purchase/);
   });
   it('get_dynamic_proxy reuses an existing proxy and refuses to create by default', async () => {
@@ -112,7 +112,7 @@ describe('MCP tools', () => {
     const client = await connect((async (u: URL) => {
       calls.push(`${u.pathname}`);
       if (u.pathname.endsWith('/area/country')) return envelope({ data: [{ id: 233, name: 'United States', code: 'US' }] });
-      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: [{ token_id: 7, username: 'uu', passwd: 'pp', host: 'proxy.example', port: 2222, proxy_area: 'United States - - ', network: 'http', status: 1 }], total: 1 });
+      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: [{ token_id: 7, username: 'uu', passwd: 'pp', host: 'proxy.example', port: 2222, proxy_area: 'United States - - ', network: 'http', status: 1, s: 3 }], total: 1 });
       return envelope(null, 404, 'nope');
     }) as never);
     const hit = await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US' } });
@@ -139,6 +139,62 @@ describe('MCP tools', () => {
     const r = JSON.parse(text(await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', create_if_missing: true } })));
     expect(r).toMatchObject({ reused: false, token_id: 9, billed_from: 'wallet' });
     expect(bodies.map(b => [b.billing_mode, b.idempotency_key])).toEqual([[undefined, 'mcp-233-0-0-http-budget'], ['payg_wallet', 'mcp-233-0-0-http-budget-payg']]);
+  });
+  it('get_dynamic_proxy hands out rotating or sticky sessions and reuses only the same line and place (2026-11-11)', async () => {
+    const rows = [
+      { token_id: 1, username: 'prem', passwd: 'pp', host: 'proxy.example', port: 2222, proxy_area: 'United States', network: 'http', status: 1, s: 1 },
+      { token_id: 2, username: 'city', passwd: 'pp', host: 'proxy.example', port: 2222, proxy_area: 'United States - California - Los Angeles', network: 'http', status: 1, s: 3 },
+      { token_id: 3, username: 'budg', passwd: 'pp', host: 'proxy.example', port: 2222, proxy_area: 'United States', network: 'http', status: 1, s: 3 },
+    ];
+    const client = await connect((async (u: URL) => {
+      if (u.pathname.endsWith('/area/country')) return envelope({ data: [{ id: 233, name: 'United States', code: 'US' }] });
+      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: rows, total: rows.length });
+      return envelope(null, 404, 'nope');
+    }) as never);
+    const call = async (args: Record<string, unknown>) => JSON.parse(text(await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', ...args } })));
+    const sticky = await call({});
+    expect(sticky).toMatchObject({ reused: true, token_id: 3, session_mode: 'sticky', connection_url: 'http://budg:pp@proxy.example:2222' });
+    const rotate = await call({ session_mode: 'rotate' });
+    expect(rotate.connection_url).toBe('http://budg-country-us:pp@proxy.example:2222');
+    const timed = await call({ session_minutes: 60 });
+    expect(timed.username).toMatch(/^budg-session-[0-9a-f]{12}-sessTime-60$/);
+    expect((await call({ line: 'premium' })).token_id).toBe(1);
+    const bad = await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', isp: 'comcast' } });
+    expect(bad.isError).toBe(true);
+    expect(text(bad)).toMatch(/premium/);
+  });
+  it('get_dynamic_proxy targets a premium ISP and list_isps lists them (2026-11-11)', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const client = await connect((async (u: URL, init: RequestInit) => {
+      if (u.pathname.endsWith('/area/country')) return envelope({ data: [{ id: 233, name: 'United States', code: 'US' }] });
+      if (u.pathname.endsWith('/isp/catalog')) return envelope({ data: u.searchParams.get('country_id') === '233' ? [{ country_id: 233, key: 'comcast', label: 'Comcast' }] : [] });
+      if (u.pathname.endsWith('/api/proxy/dynamic/traffic')) {
+        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return envelope({ token_id: 11, username: 'uu', password: 'pp', host: 'proxy.example', port: 2222, protocol: 'http' });
+      }
+      return envelope(null, 404, 'nope');
+    }) as never);
+    expect(JSON.parse(text(await client.callTool({ name: 'list_isps', arguments: { country: 'US' } }))).isps).toEqual([{ isp: 'comcast', name: 'Comcast' }]);
+    const wrong = await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', line: 'premium', isp: 'verizon', create_if_missing: true } });
+    expect(text(wrong)).toMatch(/comcast/);
+    const r = JSON.parse(text(await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', line: 'premium', isp: 'Comcast', create_if_missing: true } })));
+    expect(r).toMatchObject({ reused: false, token_id: 11, area: 'United States - Comcast' });
+    expect(bodies).toEqual([expect.objectContaining({ s: 1, isp: 'comcast', idempotency_key: 'mcp-233-0-0-http-premium-comcast' })]);
+  });
+  it('rotate_ip returns a fresh session right away and resets the sticky IP (2026-11-11)', async () => {
+    const seen: Array<{ path: string; override: string | null; body: string }> = [];
+    const client = await connect((async (u: URL, init: RequestInit) => {
+      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: [{ token_id: 7, username: 'uu', passwd: 'pp', host: 'proxy.example', port: 2222, network: 'socks5', status: 1, s: 1 }], total: 1 });
+      if (u.pathname.endsWith('/proxy/sessions')) {
+        seen.push({ path: u.pathname, override: new Headers(init.headers).get('x-http-method-override'), body: String(init.body) });
+        return envelope({ results: [{ token_id: '7', rotated_sessions: 1 }], apply_within_seconds: 150 });
+      }
+      return envelope(null, 404, 'nope');
+    }) as never);
+    const r = JSON.parse(text(await client.callTool({ name: 'rotate_ip', arguments: { token_ids: [7, 7] } })));
+    expect(r.new_ip_now[0].connection_url).toMatch(/^socks5:\/\/uu-session-[0-9a-f]{12}:pp@proxy\.example:2222$/);
+    expect(r.apply_within_seconds).toBe(150);
+    expect(seen).toEqual([{ path: expect.stringMatching(/\/proxy\/sessions$/), override: 'DELETE', body: '{"token_ids":[7]}' }]);
   });
   it('list_my_proxies asks for the active state of the billing it lists', async () => {
     const seen: string[] = [];
