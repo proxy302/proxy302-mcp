@@ -61,14 +61,16 @@ async function countryCode(client: Proxy302Client, c: Area): Promise<string | nu
 
 type Connection = { username?: string | undefined; password?: string | undefined; host?: string | undefined; port?: number | string | null | undefined; connection_url?: string | undefined };
 /** Username parameters (proxy302.com docs): -country-<cc> without a session = a new IP on every new connection;
- *  -session-<id> keeps one IP, -sessTime-<minutes> sets how long on the budget line. Sticky without minutes keeps the
- *  proxy's own session (plain username). */
+ *  -session-<id> keeps one IP, -sessTime-<minutes> sets how long on the budget line. */
 function withSession<T extends Connection>(proxy: T, protocol: string, code: string | null, mode: 'sticky' | 'rotate', minutes: number | undefined) {
   let tail = '';
   if (mode === 'rotate') {
     if (!code) throw new Proxy302Error('Rotating needs the country code of this proxy; pass the country as a two-letter code.');
     tail = `-country-${code}`;
-  } else if (minutes) tail = `-session-${newSessionId()}-sessTime-${minutes}`;
+  } else {
+    // A reused proxy may have been created rotating: sticky always pins its own session in the username.
+    tail = `-session-${newSessionId()}${minutes ? `-sessTime-${minutes}` : ''}`;
+  }
   const how_to_rotate = mode === 'rotate' ? 'Every new connection already gets a new IP.'
     : 'For a new IP now, change the value after -session- in the username (any letters and digits), or call rotate_ip.';
   if (!tail || !proxy.username || !proxy.password || !proxy.host || !proxy.port) return { ...proxy, session_mode: mode, how_to_rotate };
@@ -234,7 +236,16 @@ export function registerTools(server: McpServer, client: Proxy302Client): void {
         const username = `${e.username}-session-${newSessionId()}`;
         return { token_id: Number(row.token_id ?? row.id), username, connection_url: proxyUrl(row.network ?? 'http', username, e.password, e.host, e.port) };
       });
-    const out = await client.resetSessions(ids);
+    // The reset is all-or-nothing and a rotating proxy has no sticky session to reset: on a refusal reset one by one.
+    const out = await client.resetSessions(ids).catch(async (error: unknown) => {
+      if (!(error instanceof Proxy302Error) || ids.length === 1 && !/no sticky session/i.test(error.message)) throw error;
+      let applyWithin = 0;
+      const results = await Promise.all(ids.map(id => client.resetSessions([id]).then(one => {
+        applyWithin = Math.max(applyWithin, one.apply_within_seconds);
+        return one.results[0] ?? { token_id: String(id), rotated_sessions: 0 };
+      }, (each: unknown) => ({ token_id: String(id), rotated_sessions: 0, note: each instanceof Error ? each.message : 'not reset' }))));
+      return { results, apply_within_seconds: applyWithin };
+    });
     return ok({ new_ip_now, rotated: out.results, apply_within_seconds: out.apply_within_seconds });
   }));
 

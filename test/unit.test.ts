@@ -116,7 +116,7 @@ describe('MCP tools', () => {
       return envelope(null, 404, 'nope');
     }) as never);
     const hit = await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US' } });
-    expect(JSON.parse(text(hit))).toMatchObject({ reused: true, connection_url: 'http://uu:pp@proxy.example:2222' });
+    expect(JSON.parse(text(hit)).connection_url).toMatch(/^http:\/\/uu-session-[0-9a-f]{12}:pp@proxy\.example:2222$/);
     const miss = await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', protocol: 'socks5' } });
     expect(miss.isError).toBe(true);
     expect(text(miss)).toMatch(/create_if_missing/);
@@ -153,7 +153,8 @@ describe('MCP tools', () => {
     }) as never);
     const call = async (args: Record<string, unknown>) => JSON.parse(text(await client.callTool({ name: 'get_dynamic_proxy', arguments: { country: 'US', ...args } })));
     const sticky = await call({});
-    expect(sticky).toMatchObject({ reused: true, token_id: 3, session_mode: 'sticky', connection_url: 'http://budg:pp@proxy.example:2222' });
+    expect(sticky).toMatchObject({ reused: true, token_id: 3, session_mode: 'sticky' });
+    expect(sticky.connection_url).toMatch(/^http:\/\/budg-session-[0-9a-f]{12}:pp@proxy\.example:2222$/);
     const rotate = await call({ session_mode: 'rotate' });
     expect(rotate.connection_url).toBe('http://budg-country-us:pp@proxy.example:2222');
     const timed = await call({ session_minutes: 60 });
@@ -195,6 +196,20 @@ describe('MCP tools', () => {
     expect(r.new_ip_now[0].connection_url).toMatch(/^socks5:\/\/uu-session-[0-9a-f]{12}:pp@proxy\.example:2222$/);
     expect(r.apply_within_seconds).toBe(150);
     expect(seen).toEqual([{ path: expect.stringMatching(/\/proxy\/sessions$/), override: 'DELETE', body: '{"token_ids":[7]}' }]);
+  });
+  it('rotate_ip resets one by one when a proxy is a rotating one (2026-11-11)', async () => {
+    const client = await connect((async (u: URL, init: RequestInit) => {
+      if (u.pathname.includes('/tokens/dynamic/traffic')) return envelope({ data: [7, 8].map(id => ({ token_id: id, username: `u${id}`, passwd: 'pp', host: 'proxy.example', port: 2222, network: 'http', status: 1, s: 1 })), total: 2 });
+      if (u.pathname.endsWith('/proxy/sessions')) {
+        const ids = (JSON.parse(String(init.body)) as { token_ids: number[] }).token_ids;
+        return ids.includes(8) ? envelope(null, 422, 'Token 8 has no sticky session segment to rotate (rotating credentials fetch a new IP on every request already)')
+          : envelope({ results: ids.map(id => ({ token_id: String(id), rotated_sessions: 1 })), apply_within_seconds: 150 });
+      }
+      return envelope(null, 404, 'nope');
+    }) as never);
+    const r = JSON.parse(text(await client.callTool({ name: 'rotate_ip', arguments: { token_ids: [7, 8] } })));
+    expect(r.new_ip_now).toHaveLength(2);
+    expect(r.rotated).toEqual([{ token_id: '7', rotated_sessions: 1 }, { token_id: '8', rotated_sessions: 0, note: expect.stringContaining('no sticky session') }]);
   });
   it('list_my_proxies asks for the active state of the billing it lists', async () => {
     const seen: string[] = [];
