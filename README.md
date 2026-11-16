@@ -155,6 +155,8 @@ agent = Agent(task="Open ipinfo.io and tell me the country", llm=llm, browser=br
 
 `fetch_url` is a plain HTTP request without JavaScript rendering. For JavaScript-heavy sites, hand the proxy URL to a browser as above.
 
+Not sure which proxy type a task needs (static ISP or rotating residential, TikTok, anti-detect browsers, Claude and ChatGPT)? See the [Proxy302 guides](https://github.com/proxy302/proxy-guides).
+
 ## Configuration
 
 | Variable | Meaning |
